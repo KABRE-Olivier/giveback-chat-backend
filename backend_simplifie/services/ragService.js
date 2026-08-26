@@ -20,16 +20,16 @@ async function answerPdfQuestion(question) {
         return { answer: "Je n'ai trouvé aucun passage pertinent dans les documents indexés.", sources: [] };
     }
 
-    const context = matches.map(match => `[Source : ${match.source}]\n${match.text}`)
+    const context = matches.map(match => `Extrait du document "${match.source}" :\n${match.text}`)
         .join('\n\n---\n\n').slice(0, MAX_CONTEXT_CHARACTERS);
     const completion = await getClient().chat.completions.create({
         model: MODEL,
         messages: [
-            { role: 'system', content: "Réponds uniquement à partir du contexte fourni. Si le contexte ne suffit pas, dis-le clairement. Réponds en français et indique les sources utilisées.\n\nContexte :\n" + context },
+            { role: 'system', content: "Tu es l'assistant IA d'AfricanYouth GiveBack. Réponds uniquement à partir du contexte fourni ci-dessous, de façon naturelle et fluide, comme dans une vraie conversation. N'utilise jamais de crochets, de balises [Source: ...], ni de citations entre guillemets — reformule toujours avec tes propres mots. Si le contexte ne suffit pas pour répondre, dis-le simplement, sans inventer. Réponds toujours en français.\n\nContexte :\n" + context },
             { role: 'user', content: question }
         ],
         max_tokens: 1000,
-        temperature: 0.2
+        temperature: 0.3
     });
     return {
         answer: completion.choices[0]?.message?.content || 'Aucune réponse n\'a pu être générée.',
