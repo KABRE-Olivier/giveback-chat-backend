@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 
 const { extractTextFromDocument, chunkText } = require('./utils/pdfProcessor');
-const { generateEmbeddings } = require('./services/embeddings');
 const { addChunks, clearAll } = require('./services/vectorStore');
 
 const DOCUMENTS_DIR = path.join(__dirname, 'pdfs');
@@ -66,13 +65,8 @@ async function indexAllPDFs() {
             }
             console.log(`🧩 ${chunks.length} chunks générés`);
 
-            console.log('🧠 Génération des embeddings...');
-            const embeddings = await generateEmbeddings(chunks);
-            console.log(`   ✅ ${embeddings.length} embeddings générés`);
-
-            const toStore = chunks.map((chunk, i) => ({
+            const toStore = chunks.map((chunk) => ({
                 text: chunk,
-                embedding: embeddings[i],
                 source: documentFile,
             }));
             addChunks(toStore);
@@ -98,7 +92,6 @@ async function indexAllPDFs() {
 }
 
 indexAllPDFs().catch(error => {
-    console.error('\n❌ Erreur générale :');
-    console.error(error);
-    process.exit(1);
+    console.error('\n❌ Erreur pendant l\'indexation (le serveur continue de tourner normalement) :');
+    console.error(error.message);
 });
