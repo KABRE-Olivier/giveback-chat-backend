@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-// Toutes les données (textes + embeddings) sont stockées dans UN SEUL fichier JSON,
-// directement dans le dossier du projet. Plus besoin d'un serveur ChromaDB séparé
-// qui tournerait en parallèle — un seul service à héberger, beaucoup plus simple.
+// Toutes les données sont stockées dans UN SEUL fichier JSON, directement dans le
+// dossier du projet. Recherche par mots-clés (pas de modèle IA lourd chargé en mémoire) —
+// choix fait pour tenir dans les 512 Mo du plan gratuit d'hébergement.
 
 const STORE_PATH = path.join(__dirname, '..', 'vector_store.json');
 
@@ -21,52 +21,56 @@ function saveStore(items) {
   fs.writeFileSync(STORE_PATH, JSON.stringify(items));
 }
 
-/** Similarité cosinus entre deux vecteurs */
-function cosineSimilarity(a, b) {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-/** Vide entièrement l'index (utilisé avant une réindexation complète) */
 function clearAll() {
   saveStore([]);
 }
 
-/** Ajoute des chunks (texte + embedding + source) au magasin */
+/** Ajoute des chunks (texte + source) au magasin */
 function addChunks(chunks) {
   const store = loadStore();
   store.push(...chunks);
   saveStore(store);
 }
 
-/** Recherche les chunks les plus proches d'une question, par similarité cosinus */
+const MOTS_VIDES = new Set([
+  'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'ou', 'est', 'sont',
+  'que', 'qui', 'quoi', 'pour', 'dans', 'sur', 'avec', 'sans', 'ce', 'cette',
+  'ces', 'à', 'au', 'aux', 'en', 'par', 'se', 'sa', 'son', 'ses', 'il', 'elle',
+]);
+
+function extraireMotsCles(texte) {
+  return (texte || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retire les accents
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(m => m.length > 2 && !MOTS_VIDES.has(m));
+}
+
+/** Recherche les chunks les plus pertinents par correspondance de mots-clés */
 async function searchPdfChunks(question, limit = 5) {
-  const { generateEmbedding } = require('./embeddings');
   const store = loadStore();
 
   if (store.length === 0) {
     throw new Error("La base de documents n'est pas disponible. Exécutez `npm run index-pdfs`.");
   }
 
-  const questionEmbedding = await generateEmbedding(question);
+  const motsQuestion = extraireMotsCles(question);
+  if (motsQuestion.length === 0) return [];
 
-  const scored = store.map(item => ({
-    ...item,
-    score: cosineSimilarity(questionEmbedding, item.embedding),
-  }));
+  const scored = store.map(item => {
+    const motsChunk = extraireMotsCles(item.text);
+    const score = motsQuestion.reduce((acc, mot) => acc + motsChunk.filter(m => m.includes(mot) || mot.includes(m)).length, 0);
+    return { ...item, score };
+  });
 
   scored.sort((a, b) => b.score - a.score);
+  const pertinents = scored.filter(item => item.score > 0);
 
-  return scored.slice(0, limit).map(item => ({
+  return (pertinents.length ? pertinents : scored).slice(0, limit).map(item => ({
     text: item.text,
     source: item.source,
-    distance: 1 - item.score,
+    score: item.score,
   }));
 }
 
